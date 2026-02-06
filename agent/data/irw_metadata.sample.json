@@ -1,0 +1,32 @@
+[
+  {
+    "table": "4thgrade_math_sirt",
+    "n_responses": 50000,
+    "n_categories": 2,
+    "n_participants": 5000,
+    "n_items": 10,
+    "variables": "id | item | resp",
+    "longitudinal": ["cross-sectional"],
+    "age_range": ["Child (<18y)"],
+    "construct_type": ["cognitive"],
+    "description": "Fourth grade math assessment, dichotomous items.",
+    "url": "https://redivis.com/datasets/example/4thgrade_math_sirt",
+    "reference": "Example reference",
+    "license": ["CC-BY"]
+  },
+  {
+    "table": "chess_lnirt",
+    "n_responses": 12000,
+    "n_categories": 2,
+    "n_participants": 2000,
+    "n_items": 6,
+    "variables": "id | item | resp | rt",
+    "longitudinal": ["longitudinal"],
+    "age_range": ["Adult (18+)"],
+    "construct_type": ["cognitive"],
+    "description": "Chess skill longitudinal data with response times.",
+    "url": "https://redivis.com/datasets/example/chess_lnirt",
+    "reference": "Example reference",
+    "license": ["CC-BY"]
+  }
+]

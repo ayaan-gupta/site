@@ -1,0 +1,10 @@
+[
+  {
+    "table": "4thgrade_math_sirt",
+    "card": "Dataset: 4thgrade_math_sirt. Fourth grade math assessment, dichotomous items. Variables: id, item, resp. n_responses=50000 n_participants=5000 n_items=10 n_categories=2 density=1.0 Tags: cross-sectional Child (<18y) cognitive CC-BY"
+  },
+  {
+    "table": "chess_lnirt",
+    "card": "Dataset: chess_lnirt. Chess skill longitudinal data with response times. Variables: id, item, resp, rt. n_responses=12000 n_participants=2000 n_items=6 n_categories=2 density=1.0 Tags: longitudinal Adult (18+) cognitive CC-BY"
+  }
+]

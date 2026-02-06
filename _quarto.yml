@@ -70,6 +70,9 @@ format:
     callout-icon: false
     df-print: kable
     code-fold: true
+    # Point chat widget at local backend (comment out for production)
+    include-before-body: resources/chat/irw-chat-api-dev.html
+    include-after-body: resources/chat/irw-chat.html
 
 
 execute: 
