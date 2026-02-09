@@ -48,7 +48,7 @@ The chat widget is included on every page. By default it POSTs to `/api/chat`. T
   ```html
   <script>window.IRW_CHAT_API_URL = "http://localhost:8000/chat";</script>
   ```
-  Add this in `_quarto.yml` via `include-before-body` so it runs before the chat script.
+  Add this in `_quarto.yml` via `include-before-body` so it runs before the chat script: include-before-body: resources/chat/irw-chat-api-dev.html
 - **Option B:** Proxy `/api` to your backend in development (e.g. Vite, or Quarto preview with a proxy).
 
 ### 4. Build and preview the site
@@ -60,6 +60,20 @@ quarto preview
 ```
 
 Open the site (e.g. [http://localhost:4200](http://localhost:4200)). Click the chat button (bottom-right) and ask e.g. "I need child math assessment data with many participants" or "How do I fetch datasets with response time in R?"
+
+## Production
+
+For production you want the widget to call the chat API on the **same origin** (no `IRW_CHAT_API_URL`), so requests go to `/api/chat` and avoid CORS.
+
+1. **In `_quarto.yml`:** Comment out or remove the dev include so the widget uses the default:
+   ```yaml
+   # include-before-body: resources/chat/irw-chat-api-dev.html
+   ```
+2. **Serve the API at `/api/chat`.** The site (e.g. GitHub Pages) only serves static files, so you need the agent available at that path. Two common approaches:
+   - **Reverse proxy:** Serve the Quarto site and the agent behind the same host; configure the server (e.g. nginx, Cloudflare, Netlify) so that requests to `https://yoursite.org/api/chat` are proxied to the FastAPI app (e.g. running on the same machine or a backend service).
+   - **Separate host + production include:** Host the agent elsewhere (e.g. Cloud Run, Railway, Fly.io) and add a *production* include file that sets `window.IRW_CHAT_API_URL` to that URL (e.g. `https://your-agent.example.com/chat`). Then the widget talks to the agent on a different origin; ensure CORS allows your site (e.g. via `CORS_ORIGINS`).
+
+Without one of these, the widget will POST to `/api/chat` and get 404 (e.g. on plain GitHub Pages, which does not run the agent).
 
 ## Architecture
 
