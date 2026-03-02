@@ -1,6 +1,6 @@
 """
 Agentic IRW assistant: LLM with tool calling to locate and process data.
-Current Tools I've added so far: search_datasets, get_dataset_details, generate_r_code, get_docs.
+Supports OpenAI or Gemini via IRW_LLM_PROVIDER env var.
 """
 import json
 import os
@@ -17,6 +17,13 @@ try:
     from openai import OpenAI
 except ImportError:
     OpenAI = None
+
+try:
+    import google.generativeai as genai
+    _GEMINI_AVAILABLE = True
+except ImportError:
+    genai = None
+    _GEMINI_AVAILABLE = False
 
 SYSTEM_PROMPT = """You are the Item Response Warehouse (IRW) assistant. You help researchers and practitioners locate and process the best IRW datasets for their project.
 
@@ -121,6 +128,22 @@ TOOL_DEFS = [
 ]
 
 
+def _openai_to_gemini_tool_defs():
+    """Convert OpenAI-format tool defs to Gemini function declarations."""
+    decls = []
+    for t in TOOL_DEFS:
+        f = t["function"]
+        decls.append({
+            "name": f["name"],
+            "description": f["description"],
+            "parameters": f["parameters"],
+        })
+    return decls
+
+
+GEMINI_TOOL_DECLARATIONS = _openai_to_gemini_tool_defs()
+
+
 def _call_tool(name: str, arguments: dict, openai_api_key: str | None = None) -> str:
     if name == "search_datasets":
         return tool_search_datasets(
@@ -141,28 +164,14 @@ def _call_tool(name: str, arguments: dict, openai_api_key: str | None = None) ->
     return f"Unknown tool: {name}"
 
 
-def run_agent(
+def _run_agent_openai(
     messages: list[dict[str, Any]],
-    openai_api_key: str | None = None,
-    model: str = "gpt-4o-mini",
-    max_tool_rounds: int = 5,
+    api_key: str,
+    model: str,
+    max_tool_rounds: int,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """
-    Run the agentic loop: LLM with tool calling until a final answer.
-    messages: list of {"role": "user"|"assistant"|"system", "content": "..."}.
-    Returns (final_assistant_message, updated_messages).
-    """
-    api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
-    if not OpenAI or not api_key:
-        return (
-            "The IRW assistant is not configured (missing OPENAI_API_KEY). "
-            "You can still explore data on the Home page and use Getting Started for R/Python code.",
-            messages,
-        )
-
     client = OpenAI(api_key=api_key)
     history = list(messages)
-
     for _ in range(max_tool_rounds):
         response = client.chat.completions.create(
             model=model,
@@ -172,8 +181,6 @@ def run_agent(
         )
         choice = response.choices[0]
         msg = choice.message
-
-        # Append full assistant message (content + tool_calls if any)
         assistant_msg = {"role": "assistant", "content": msg.content or ""}
         if msg.tool_calls:
             assistant_msg["tool_calls"] = [
@@ -181,10 +188,8 @@ def run_agent(
                 for tc in msg.tool_calls
             ]
         history.append(assistant_msg)
-
         if not msg.tool_calls:
             return (msg.content or "", history)
-
         for tc in msg.tool_calls:
             name = tc.function.name
             try:
@@ -193,8 +198,6 @@ def run_agent(
                 args = {}
             result = _call_tool(name, args, openai_api_key=api_key)
             history.append({"role": "tool", "tool_call_id": tc.id, "content": result[:8000]})
-
-    # Fallback if max_tool_rounds hit
     final = client.chat.completions.create(
         model=model,
         messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
@@ -202,6 +205,126 @@ def run_agent(
     final_content = final.choices[0].message.content or ""
     history.append({"role": "assistant", "content": final_content})
     return (final_content, history)
+
+
+def _messages_to_gemini_contents(messages: list[dict[str, Any]]) -> list[Any]:
+    """Convert our message list to Gemini contents (role + parts). Only user/assistant; skip system (use system_instruction on model)."""
+    contents = []
+    for m in messages:
+        if m.get("role") == "user":
+            contents.append({"role": "user", "parts": [m.get("content", "")]})
+        elif m.get("role") == "assistant" and m.get("content"):
+            contents.append({"role": "model", "parts": [m.get("content", "")]})
+    return contents
+
+
+def _run_agent_gemini(
+    messages: list[dict[str, Any]],
+    api_key: str,
+    model: str,
+    max_tool_rounds: int,
+) -> tuple[str, list[dict[str, Any]]]:
+    if not _GEMINI_AVAILABLE or genai is None:
+        return (
+            "Gemini is not available (install google-generativeai).",
+            messages,
+        )
+    genai.configure(api_key=api_key)
+    declarations = []
+    for d in GEMINI_TOOL_DECLARATIONS:
+        declarations.append(genai.protos.FunctionDeclaration(
+            name=d["name"],
+            description=d["description"],
+            parameters=d["parameters"],
+        ))
+    tool = genai.protos.Tool(function_declarations=declarations)
+    gemini_model = genai.GenerativeModel(
+        model_name=model,
+        system_instruction=SYSTEM_PROMPT,
+        tools=[tool],
+    )
+    history = list(messages)
+    contents = _messages_to_gemini_contents(history)
+    last_assistant_content = ""
+
+    for _ in range(max_tool_rounds):
+        response = gemini_model.generate_content(contents, tool_config={"function_calling_config": {"mode": "AUTO"}})
+        if not response.candidates or not response.candidates[0].content.parts:
+            break
+        parts = response.candidates[0].content.parts
+        text_parts = []
+        function_calls = []
+        for part in parts:
+            if getattr(part, "text", None):
+                text_parts.append(part.text)
+            if getattr(part, "function_call", None):
+                function_calls.append(part.function_call)
+
+        last_assistant_content = "\n".join(text_parts) if text_parts else ""
+        history.append({"role": "assistant", "content": last_assistant_content})
+
+        if not function_calls:
+            return (last_assistant_content or "", history)
+
+        contents.append({"role": "model", "parts": [{"function_call": fc} for fc in function_calls]})
+        response_parts = []
+        for fc in function_calls:
+            name = fc.name
+            args = getattr(fc, "args", None)
+            if args is not None and hasattr(args, "items"):
+                args = dict(args)
+            elif args is not None:
+                try:
+                    args = json.loads(str(args)) if args else {}
+                except Exception:
+                    args = {}
+            else:
+                args = {}
+            result = _call_tool(name, args, openai_api_key=None)
+            response_parts.append({"function_response": {"name": name, "response": {"result": result[:8000]}}})
+            history.append({"role": "tool", "content": result[:8000]})
+        contents.append({"role": "user", "parts": response_parts})
+
+    history.append({"role": "assistant", "content": last_assistant_content})
+    return (last_assistant_content or "", history)
+
+
+def run_agent(
+    messages: list[dict[str, Any]],
+    openai_api_key: str | None = None,
+    google_api_key: str | None = None,
+    model: str | None = None,
+    max_tool_rounds: int = 5,
+) -> tuple[str, list[dict[str, Any]]]:
+    """
+    Run the agentic loop. Provider is chosen by IRW_LLM_PROVIDER env var: "openai" or "gemini".
+    """
+    provider = (os.environ.get("IRW_LLM_PROVIDER") or "openai").strip().lower()
+    if provider not in ("openai", "gemini"):
+        provider = "openai"
+
+    if provider == "openai":
+        api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
+        if not OpenAI or not api_key:
+            return (
+                "The IRW assistant is not configured (set IRW_LLM_PROVIDER=openai and OPENAI_API_KEY). "
+                "You can still explore data on the Home page and use Getting Started for R/Python code.",
+                messages,
+            )
+        model_name = model or os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+        return _run_agent_openai(messages, api_key, model_name, max_tool_rounds)
+
+    if provider == "gemini":
+        api_key = google_api_key or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return (
+                "The IRW assistant is not configured (set IRW_LLM_PROVIDER=gemini and GOOGLE_API_KEY or GEMINI_API_KEY).",
+                messages,
+            )
+        model_name = model or os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+        return _run_agent_gemini(messages, api_key, model_name, max_tool_rounds)
+
+    return ("The IRW assistant is not configured.", messages)
 
 
 def run_agent_simple(

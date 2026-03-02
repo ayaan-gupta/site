@@ -2,6 +2,15 @@
 
 Agentic AI assistant that helps users **locate and process** the best IRW datasets for their project. The agent uses an LLM with **tool calling** (search datasets, get details, generate R code, get doc links) and optional **semantic search** over dataset cards (RAG).
 
+## Choosing the LLM provider (OpenAI or Gemini)
+
+The agent can use **OpenAI** (e.g. GPT-4o-mini) or **Google Gemini** (e.g. Gemini 1.5 Flash) for the same tool-calling behavior. You choose the provider with the **`IRW_LLM_PROVIDER`** environment variable:
+
+- **`IRW_LLM_PROVIDER=openai`** (default) — uses the OpenAI API. Set `OPENAI_API_KEY` and optionally `OPENAI_MODEL`.
+- **`IRW_LLM_PROVIDER=gemini`** — uses the Gemini API. Set `GOOGLE_API_KEY` (or `GEMINI_API_KEY`) and optionally `GEMINI_MODEL`.
+
+The same tools (search, get details, generate R code, get docs) and system prompt are used for both; only the underlying model and API change. Use whichever provider you have access to or prefer. If `IRW_LLM_PROVIDER` is unset or invalid, the agent falls back to `openai`.
+
 ## Quick start
 
 ### 1. Export metadata (optional but recommended)
@@ -22,23 +31,45 @@ From the **site root** (parent of `agent/`):
 pip install -r agent/requirements.txt
 ```
 
-Set your OpenAI API key and start the server:
+Choose **OpenAI** or **Gemini** and set the matching env vars (or use `agent/.env`).
 
-**Windows (PowerShell):**
+**Option A – OpenAI (default)**  
+Set `IRW_LLM_PROVIDER=openai` and your OpenAI key:
 
 ```powershell
+# Windows
+$env:IRW_LLM_PROVIDER = "openai"
 $env:OPENAI_API_KEY = "sk-..."
 uvicorn agent.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Linux/macOS:**
-
 ```bash
+# Linux/macOS
+export IRW_LLM_PROVIDER=openai
 export OPENAI_API_KEY=sk-...
 uvicorn agent.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Or copy `agent/.env.example` to `agent/.env`, add `OPENAI_API_KEY`, then run from site root: `uvicorn agent.main:app --reload --host 0.0.0.0 --port 8000`.
+**Option B – Gemini**  
+Set `IRW_LLM_PROVIDER=gemini` and your Google API key:
+
+```powershell
+# Windows
+$env:IRW_LLM_PROVIDER = "gemini"
+$env:GOOGLE_API_KEY = "your-google-api-key"
+uvicorn agent.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+```bash
+# Linux/macOS
+export IRW_LLM_PROVIDER=gemini
+export GOOGLE_API_KEY=your-google-api-key
+uvicorn agent.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+You can also use `GEMINI_API_KEY` instead of `GOOGLE_API_KEY`. Optional: `OPENAI_MODEL` (e.g. `gpt-4o-mini`) or `GEMINI_MODEL` (e.g. `gemini-1.5-flash`).
+
+Or copy `agent/.env.example` to `agent/.env`, set `IRW_LLM_PROVIDER` and the right API key(s), then run: `uvicorn agent.main:app --reload --host 0.0.0.0 --port 8000`.
 
 ### 3. Point the widget at the API
 
@@ -77,6 +108,7 @@ Without one of these, the widget will POST to `/api/chat` and get 404 (e.g. on p
 
 ## Architecture
 
+- **LLM provider:** The agent supports **OpenAI** or **Gemini**; the provider is selected via `IRW_LLM_PROVIDER`. The same tools and system prompt are used for both.
 - **RAG:** Dataset "cards" (one text blob per dataset: description, variables, stats, tags) are optionally embedded with OpenAI; the user's message is embedded and top-k cards are retrieved so the agent recommends from real catalog data.
 - **Tools:** The LLM can call `search_datasets(project_description)`, `get_dataset_details(tables)`, `generate_r_code(table_names|filter_args)`, `get_docs(topic)`.
 - **Agent loop:** Messages + tool results are passed back to the LLM until it returns a final answer (no more tool calls).
@@ -84,11 +116,14 @@ Without one of these, the widget will POST to `/api/chat` and get 404 (e.g. on p
 ## Environment
 
 
-| Variable         | Description                                               |
-| ---------------- | --------------------------------------------------------- |
-| `OPENAI_API_KEY` | Required for the LLM and optional semantic search.        |
-| `OPENAI_MODEL`   | Optional; default `gpt-4o-mini`.                          |
-| `CORS_ORIGINS`   | Optional; comma-separated origins for CORS (default `*`). |
+| Variable                      | Description                                                |
+| ----------------------------- | ---------------------------------------------------------- |
+| `IRW_LLM_PROVIDER`            | `openai` or `gemini` (default: `openai`).                  |
+| `OPENAI_API_KEY`              | Required when provider is `openai`.                        |
+| `OPENAI_MODEL`                | Optional; default `gpt-4o-mini`.                            |
+| `GOOGLE_API_KEY` / `GEMINI_API_KEY` | Required when provider is `gemini`.                 |
+| `GEMINI_MODEL`                | Optional; default `gemini-1.5-flash`.                      |
+| `CORS_ORIGINS`                | Optional; comma-separated origins for CORS (default `*`).  |
 
 
 ## Files

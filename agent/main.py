@@ -67,7 +67,8 @@ def chat(req: ChatRequest):
         reply, updated = run_agent(
             history,
             openai_api_key=os.environ.get("OPENAI_API_KEY"),
-            model=os.environ.get("OPENAI_MODEL", "gpt-4o-mini"),
+            google_api_key=os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"),
+            model=os.environ.get("OPENAI_MODEL") or os.environ.get("GEMINI_MODEL"),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
